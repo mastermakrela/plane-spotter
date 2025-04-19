@@ -1,25 +1,46 @@
-# Cloudflare Workers OpenAPI 3.1
+# Plane Spotter
 
-This is a Cloudflare Worker with OpenAPI 3.1 using [chanfana](https://github.com/cloudflare/chanfana) and [Hono](https://github.com/honojs/hono).
+Plane Spotter is a Cloudflare Worker API that provides real-time information about airplanes flying near a specified location. It is designed for integration with Apple Watch shortcuts, enabling quick access to flight details overhead.
 
-This is an example project made to be used as a quick start into building OpenAPI compliant Workers that generates the
-`openapi.json` schema automatically from code and validates the incoming request to the defined parameters or request body.
+## What it does
 
-## Get started
+- Fetches live flight data from both OpenSky Network and FlightRadar24.
+- Merges, deduplicates, and enriches flight information (including aircraft model, airline, origin, and destination).
+- Exposes a secure HTTP API endpoint to query for flights near a given latitude/longitude and within a specified radius.
+- Supports both JSON and human-readable plain text output for easy consumption by devices and shortcuts.
 
-1. Sign up for [Cloudflare Workers](https://workers.dev). The free tier is more than enough for most use cases.
-2. Clone this project and install dependencies with `npm install`
-3. Run `wrangler login` to login to your Cloudflare account in wrangler
-4. Run `wrangler deploy` to publish the API to Cloudflare Workers
+## How it works
 
-## Project structure
+1. **API Endpoint**:  
+   The worker exposes a POST endpoint at `/api/flights/nearby` that requires an API key for authentication.
 
-1. Your main router is defined in `src/index.ts`.
-2. Each endpoint has its own file in `src/endpoints/`.
-3. For more information read the [chanfana documentation](https://chanfana.pages.dev/) and [Hono documentation](https://hono.dev/docs).
+2. **Request**:  
+   Clients send a JSON body with latitude, longitude, and optional radius (in kilometers). An optional `pretty-print` flag returns a formatted text response.
 
-## Development
+3. **Data Fetching**:  
+   The worker queries both OpenSky and FlightRadar24 APIs for flights within the requested area. It calculates distances, fetches additional details, and merges results by unique aircraft identifiers.
 
-1. Run `wrangler dev` to start a local instance of the API.
-2. Open `http://localhost:8787/` in your browser to see the Swagger interface where you can try the endpoints.
-3. Changes made in the `src/` folder will automatically trigger the server to reload, you only need to refresh the Swagger interface.
+4. **Response**:  
+   The API returns a list of nearby flights, sorted by distance, including details such as aircraft type, registration, airline, origin, destination, altitude, speed, and heading. The response can be in JSON or pretty-printed text format.
+
+5. **Security**:  
+   All requests require a valid API key, which is checked against the value set in the worker's environment variables.
+
+## Example Usage
+
+See the Apple Watch shortcut or use any HTTP client to POST to `/api/flights/nearby` with the required headers and body.
+
+```
+POST /api/flights/nearby
+Headers:
+  api-key: <your-api-key>
+Body:
+  {
+    "lat": 52.2297,
+    "lon": 21.0122,
+    "radius": 10,
+    "pretty-print": true
+  }
+```
+
+For more details, see the [src/index.ts](src/index.ts) and [src/utils.ts](src/utils.ts) files.
