@@ -1,0 +1,83 @@
+diff --git a/lib/flight.js b/lib/flight.js
+index e1eb5005468ff12878a597c57d45f535bac3e253..8cf11a78b58edcec9f1ef7c124765fb1ee37514d 100644
+--- a/lib/flight.js
++++ b/lib/flight.js
+@@ -1,8 +1,8 @@
+-import qs from 'querystring'
+ import _fetch from 'fetch-ponyfill'
+-const {fetch} = _fetch()
++import qs from 'querystring'
++// const {fetch} = _fetch()
+ import moment from 'moment-timezone'
+-import {getRandomUserAgent} from './random-user-agent.js'
++import { getRandomUserAgent } from './random-user-agent.js'
+ 
+ const endpoint = 'https://data-live.flightradar24.com/clickhandler/'
+ 
+@@ -94,5 +94,6 @@ const fetchFlight = async (flight) => {
+ }
+ 
+ export {
+-	fetchFlight,
++	fetchFlight
+ }
++
+diff --git a/lib/radar.js b/lib/radar.js
+index e65fd5d57f26e7e3a2fad57b837ddc3698c41e9b..8987aa85f7c7cc90667a1f8ba3640cf379d6cd45 100644
+--- a/lib/radar.js
++++ b/lib/radar.js
+@@ -1,8 +1,6 @@
+-import qs from 'querystring'
+ import _fetch from 'fetch-ponyfill'
+-const {fetch} = _fetch()
+-import parse from 'parse-jsonp'
+-import {getRandomUserAgent} from './random-user-agent.js'
++import qs from 'querystring'
++import { getRandomUserAgent } from './random-user-agent.js'
+ 
+ const isObj = o => 'object' === typeof o && o !== null && !Array.isArray(o)
+ 
+@@ -53,7 +51,8 @@ const fetchFromRadar = async (north, west, south, east, when, opt = {}) => {
+ 	if (when) query.history = Math.round(when / 1000)
+ 
+ 	const url = endpoint + '?' + qs.stringify(query)
+-	const res = await fetch(url, {
++	// const res = await fetch(url, {
++	const req = new Request(url, {
+ 		mode: 'cors',
+ 		redirect: 'follow',
+ 		headers: {
+@@ -63,13 +62,24 @@ const fetchFromRadar = async (north, west, south, east, when, opt = {}) => {
+ 		referrer: 'no-referrer',
+ 		referrerPolicy: 'no-referrer',
+ 	})
++	const res = await fetch(req)
++
+ 	if (!res.ok) {
+ 		const err = new Error(res.statusText)
+ 		err.statusCode = res.status
+ 		throw err
+ 	}
+ 	const jsonp = await res.text()
+-	const data = parse('jsonp', jsonp)
++	// const data = parse('jsonp', jsonp)
++
++	// const jsonStr = jsonp.replace(/jsonp\((.*)\);?$/, '$1');
++	const jsonStr = /jsonp\(([\s\S]*)\);?/.exec(jsonp)[1];
++	let data;
++	try {
++		data = JSON.parse(jsonStr);
++	} catch (e) {
++		return [];
++	}
+ 	if (!isObj(data)) throw new Error('response data must be an object')
+ 
+ 	const aircraft = []
+@@ -103,5 +113,6 @@ const fetchFromRadar = async (north, west, south, east, when, opt = {}) => {
+ }
+ 
+ export {
+-	fetchFromRadar,
++	fetchFromRadar
+ }
++
