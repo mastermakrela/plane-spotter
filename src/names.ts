@@ -677,7 +677,7 @@ export const airline_names: Record<string, string> = {
 	MB: "MNG Airlines",
 	OW: "Executive Airlines",
 	EO: "Hewa Bora Airways",
-	U2: "United Feeder Service",
+	// U2: "United Feeder Service",
 	DS: "easyJet Switzerland",
 	IH: "Irtysh Air",
 	EF: "Far Eastern Air Transport",

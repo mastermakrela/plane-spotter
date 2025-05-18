@@ -45,4 +45,11 @@
 	 * https://developers.cloudflare.com/workers/wrangler/configuration/#service-bindings
 	 */
 	// "services": [{ "binding": "MY_SERVICE", "service": "my-service" }]
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "plane_spotter_db",
+			"database_id": "77cb377c-1435-4b72-ac0d-e936fc541fdf"
+		}
+	]
 }

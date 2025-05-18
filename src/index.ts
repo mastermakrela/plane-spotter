@@ -112,9 +112,14 @@ class NearbyFlights extends OpenAPIRoute {
 	};
 
 	async handle(c) {
+		// Add 'any' type for c if not already strongly typed by Hono/Chanfana context
+		let requestBody; // To store request body for logging in case of error
+		let rawFlightResultJson: string | null = null; // To store raw result from getNearbyFlights
+
 		try {
 			// Get validated data
 			const data = await this.getValidatedData<typeof this.schema>();
+			requestBody = data.body; // Store for potential error logging
 
 			console.log(`🦔 ~ NearbyFlights ~ handle ~ data.body:`, data.body);
 			// Retrieve the validated coordinates and pretty-print flag
@@ -126,29 +131,98 @@ class NearbyFlights extends OpenAPIRoute {
 
 			// Get nearby flights using the utility function
 			const result = await getNearbyFlights(lat, lon, radiusKm);
+			rawFlightResultJson = JSON.stringify(result); // Store raw result
+
+			let finalResponse;
+			let responseBodyToLog: string;
+			let responseTypeToLog: string;
+			let responseIsSuccess = true;
 
 			if (prettyPrint) {
 				const prettyText = prettyPrintFlights(result.flights);
-				return new Response(prettyText, {
-					headers: { "Content-Type": "text/plain" },
-				});
+				responseBodyToLog = prettyText;
+				responseTypeToLog = "text/plain";
+				finalResponse = c.text(prettyText, 200, { "Content-Type": "text/plain" });
 			} else {
-				// Return JSON response (Chanfana might handle wrapping this in { series: ... } automatically)
-				return {
+				const jsonResponseObject = {
 					success: true,
 					...result,
 				};
+				responseBodyToLog = JSON.stringify(jsonResponseObject);
+				responseTypeToLog = "application/json";
+				responseIsSuccess = jsonResponseObject.success;
+				finalResponse = c.json(jsonResponseObject);
 			}
-		} catch (error) {
-			return Response.json(
-				{
-					success: false,
-					error: error.message || "An error occurred while fetching flights",
-				},
-				{
-					status: 400,
+
+			// D1 Logging for successful response
+			if (c.env.DB) {
+				try {
+					const stmt = c.env.DB.prepare(
+						`INSERT INTO request_logs (timestamp, latitude, longitude, radius, request_pretty_print, response_type, response_body, response_success, raw_flight_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+					);
+					await stmt
+						.bind(
+							new Date().toISOString(),
+							lat,
+							lon,
+							radiusKm,
+							prettyPrint ? 1 : 0,
+							responseTypeToLog,
+							responseBodyToLog,
+							responseIsSuccess ? 1 : 0,
+							rawFlightResultJson
+						)
+						.run();
+				} catch (dbError: any) {
+					console.error(
+						"D1 logging failed for successful response:",
+						dbError.message,
+						dbError.cause ? dbError.cause.message : ""
+					);
 				}
-			);
+			} else {
+				console.warn("D1 binding 'DB' not found in environment. Skipping logging for successful response.");
+			}
+
+			return finalResponse;
+		} catch (error: any) {
+			const errorResponse = {
+				success: false,
+				error: error.message || "An error occurred while fetching flights",
+			};
+
+			// D1 Logging for error response
+			if (c.env.DB) {
+				try {
+					const errorLat = requestBody?.lat ?? null;
+					const errorLon = requestBody?.lon ?? null;
+					const errorRadius = requestBody?.radius ?? null;
+					const errorPrettyPrint = requestBody?.["pretty-print"] ?? false;
+
+					const stmt = c.env.DB.prepare(
+						`INSERT INTO request_logs (timestamp, latitude, longitude, radius, request_pretty_print, response_type, response_body, response_success, raw_flight_data) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+					);
+					await stmt
+						.bind(
+							new Date().toISOString(),
+							errorLat,
+							errorLon,
+							errorRadius,
+							errorPrettyPrint ? 1 : 0,
+							"application/json", // Error response is JSON
+							JSON.stringify(errorResponse),
+							0, // success is false
+							rawFlightResultJson // Log raw flight data even in case of error, if available
+						)
+						.run();
+				} catch (dbError: any) {
+					console.error("D1 logging failed for error response:", dbError.message, dbError.cause ? dbError.cause.message : "");
+				}
+			} else {
+				console.warn("D1 binding 'DB' not found in environment. Skipping logging for error response.");
+			}
+
+			return c.json(errorResponse, 400);
 		}
 	}
 }

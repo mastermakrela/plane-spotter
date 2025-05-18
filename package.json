@@ -9,16 +9,15 @@
 		"cf-typegen": "wrangler types"
 	},
 	"dependencies": {
-		"chanfana": "^2.0.2",
+		"chanfana": "^2.8.0",
 		"flightradar24-client": "^1.0.1",
-		"hono": "^4.4.7",
-		"zod": "^3.23.8"
+		"hono": "^4.7.10",
+		"zod": "^3.24.4"
 	},
 	"devDependencies": {
-		"@cloudflare/workers-types": "^4.20250418.0",
 		"@types/node": "20.8.3",
-		"@types/service-worker-mock": "^2.0.1",
-		"wrangler": "^4.12.0"
+		"@types/service-worker-mock": "^2.0.4",
+		"wrangler": "^4.15.2"
 	},
 	"patchedDependencies": {
 		"flightradar24-client@1.0.1": "patches/flightradar24-client@1.0.1.patch"
