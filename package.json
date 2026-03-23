@@ -9,17 +9,12 @@
 		"cf-typegen": "wrangler types"
 	},
 	"dependencies": {
-		"chanfana": "^2.8.0",
-		"flightradar24-client": "^1.0.1",
+		"chanfana": "^3.0.0",
 		"hono": "^4.7.10",
-		"zod": "^3.24.4"
+		"zod": "^4.0.0"
 	},
 	"devDependencies": {
-		"@types/node": "20.8.3",
-		"@types/service-worker-mock": "^2.0.4",
+		"@types/node": "^22.0.0",
 		"wrangler": "^4.15.2"
-	},
-	"patchedDependencies": {
-		"flightradar24-client@1.0.1": "patches/flightradar24-client@1.0.1.patch"
 	}
 }

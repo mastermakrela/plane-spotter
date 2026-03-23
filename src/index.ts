@@ -1,4 +1,4 @@
-import { Bool, Num, OpenAPIRoute, fromHono } from "chanfana";
+import { OpenAPIRoute, fromHono } from "chanfana";
 import { Hono } from "hono";
 import { z } from "zod";
 import { getNearbyFlights, prettyPrintFlights } from "./utils";
@@ -50,9 +50,9 @@ class NearbyFlights extends OpenAPIRoute {
 				content: {
 					"application/json": {
 						schema: z.object({
-							lat: Num({ description: "Latitude between -90 and 90" }),
-							lon: Num({ description: "Longitude between -180 and 180" }),
-							radius: Num({ description: "Search radius in kilometers" }).optional().default(10),
+							lat: z.number().describe("Latitude between -90 and 90"),
+							lon: z.number().describe("Longitude between -180 and 180"),
+							radius: z.number().describe("Search radius in kilometers").optional().default(10),
 							"pretty-print": z
 								.boolean()
 								.optional()
@@ -65,16 +65,14 @@ class NearbyFlights extends OpenAPIRoute {
 		},
 		responses: {
 			"200": {
-				description: "Returns nearby flights within 10km radius, either as JSON or plain text",
+				description: "Returns nearby flights within the requested radius, either as JSON or plain text",
 				content: {
 					"application/json": {
 						schema: z.object({
-							// series: z.object({ // Chanfana might auto-wrap this, adjust if needed
-							success: Bool(),
+							success: z.boolean(),
 							flights: z.array(z.any()),
 							source: z.string(),
 							timestamp: z.number(),
-							// }),
 						}),
 					},
 					"text/plain": {
@@ -87,10 +85,8 @@ class NearbyFlights extends OpenAPIRoute {
 				content: {
 					"application/json": {
 						schema: z.object({
-							series: z.object({
-								success: Bool(),
-								error: z.string(),
-							}),
+							success: z.boolean(),
+							error: z.string(),
 						}),
 					},
 				},
@@ -100,10 +96,8 @@ class NearbyFlights extends OpenAPIRoute {
 				content: {
 					"application/json": {
 						schema: z.object({
-							series: z.object({
-								success: Bool(),
-								error: z.string(),
-							}),
+							success: z.boolean(),
+							error: z.string(),
 						}),
 					},
 				},
@@ -186,10 +180,20 @@ class NearbyFlights extends OpenAPIRoute {
 
 			return finalResponse;
 		} catch (error: any) {
+			const validationErrors = ["Invalid latitude", "Invalid longitude", "Invalid radius"];
+			const isValidationError = validationErrors.some((msg) => error.message?.includes(msg));
+
+			const statusCode = isValidationError ? 400 : 500;
 			const errorResponse = {
 				success: false,
-				error: error.message || "An error occurred while fetching flights",
+				error: isValidationError
+					? error.message
+					: "An internal server error occurred",
 			};
+
+			if (!isValidationError) {
+				console.error("Unexpected error in NearbyFlights handler:", error);
+			}
 
 			// D1 Logging for error response
 			if (c.env.DB) {
@@ -222,7 +226,7 @@ class NearbyFlights extends OpenAPIRoute {
 				console.warn("D1 binding 'DB' not found in environment. Skipping logging for error response.");
 			}
 
-			return c.json(errorResponse, 400);
+			return c.json(errorResponse, statusCode);
 		}
 	}
 }

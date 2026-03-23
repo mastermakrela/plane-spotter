@@ -4,7 +4,7 @@ Plane Spotter is a Cloudflare Worker API that provides real-time information abo
 
 ## What it does
 
-- Fetches live flight data from both OpenSky Network and FlightRadar24.
+- Fetches live flight data from both OpenSky Network and adsb.fi, with route enrichment via adsbdb.com.
 - Merges, deduplicates, and enriches flight information (including aircraft model, airline, origin, and destination).
 - Exposes a secure HTTP API endpoint to query for flights near a given latitude/longitude and within a specified radius.
 - Supports both JSON and human-readable plain text output for easy consumption by devices and shortcuts.
@@ -18,7 +18,7 @@ Plane Spotter is a Cloudflare Worker API that provides real-time information abo
    Clients send a JSON body with latitude, longitude, and optional radius (in kilometers). An optional `pretty-print` flag returns a formatted text response.
 
 3. **Data Fetching**:  
-   The worker queries both OpenSky and FlightRadar24 APIs for flights within the requested area. It calculates distances, fetches additional details, and merges results by unique aircraft identifiers.
+   The worker queries both OpenSky and adsb.fi APIs for flights within the requested area. It calculates distances, enriches results with route data from adsbdb.com, and merges results by unique aircraft identifiers.
 
 4. **Response**:  
    The API returns a list of nearby flights, sorted by distance, including details such as aircraft type, registration, airline, origin, destination, altitude, speed, and heading. The response can be in JSON or pretty-printed text format.
