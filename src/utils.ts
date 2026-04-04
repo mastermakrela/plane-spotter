@@ -82,91 +82,72 @@ async function fetchOpenSky(lat: number, lon: number, radiusKm: number): Promise
 
 	const response = await fetch(
 		`https://opensky-network.org/api/states/all?lamin=${lamin}&lamax=${lamax}&lomin=${lomin}&lomax=${lomax}`,
-		{
-			headers:
-				process.env.OPENSKY_USERNAME && process.env.OPENSKY_PASSWORD
-					? {
-							Authorization: `Basic ${Buffer.from(`${process.env.OPENSKY_USERNAME}:${process.env.OPENSKY_PASSWORD}`).toString(
-								"base64"
-							)}`,
-					  }
-					: {},
-		}
+		{ cf: { cacheTtl: 15 } } as RequestInit
 	);
 
 	if (!response.ok) throw new Error(`OpenSky API error: ${response.status}`);
 
 	// Parse raw state array
-	const data = await response.json();
+	const data = await response.json() as { states?: unknown[][] };
 	const rawStates = (data.states ?? []) as unknown[][];
-	const now = Math.floor(Date.now() / 1000);
-	const begin = now - 24 * 3600;
 
-	const flights = await Promise.all(
-		rawStates
-			.filter((state: unknown[]): boolean => {
-				const lat2 = Number(state[6]);
-				const lon2 = Number(state[5]);
-				return isWithinRadius(lat, lon, lat2, lon2, radiusKm);
-			})
-			.map(async (state: unknown[]): Promise<Flight | null> => {
-				const callsign = String(state[1] || "").trim();
-				const icao24 = String(state[0] || "");
-				if (!icao24) return null; // Skip if no ICAO24
+	// Step 1: Map all aircraft into Flight objects without route calls
+	const allFlights: Flight[] = rawStates
+		.filter((state: unknown[]): boolean => {
+			const lat2 = Number(state[6]);
+			const lon2 = Number(state[5]);
+			return isWithinRadius(lat, lon, lat2, lon2, radiusKm);
+		})
+		.map((state: unknown[]): Flight | null => {
+			const icao24 = String(state[0] || "");
+			if (!icao24) return null;
 
-				const latitude = Number(state[6]);
-				const longitude = Number(state[5]);
-				const baroAlt = state[7] != null ? Number(state[7]) : undefined;
-				const geoAlt = state[13] != null ? Number(state[13]) : undefined;
-				const altitude = baroAlt ?? geoAlt ?? 0; // Altitude is in meters from OpenSky
-				const speed = Number(state[9] ?? 0); // Speed is in m/s from OpenSky
-				const heading = Number(state[10] ?? 0);
-				const origin_country_from_state = String(state[2] ?? "");
-				const distance = calculateDistance(lat, lon, latitude, longitude);
+			const callsign = String(state[1] || "").trim();
+			const latitude = Number(state[6]);
+			const longitude = Number(state[5]);
+			const baroAlt = state[7] != null ? Number(state[7]) : undefined;
+			const geoAlt = state[13] != null ? Number(state[13]) : undefined;
+			const altitude = baroAlt ?? geoAlt ?? 0;
+			const speed = Number(state[9] ?? 0);
+			const heading = Number(state[10] ?? 0);
+			const distance = calculateDistance(lat, lon, latitude, longitude);
 
-				const flight: Flight = {
-					icao24,
-					callsign,
-					latitude,
-					longitude,
-					altitude,
-					speed,
-					heading,
-					distance,
-					aircraft: {}, // Initialize nested objects
-					origin: { country: origin_country_from_state, id: "", name: "" },
-					destination: { id: "", name: "", country: "" },
-				};
+			return {
+				icao24,
+				callsign,
+				latitude,
+				longitude,
+				altitude,
+				speed,
+				heading,
+				distance,
+				aircraft: {},
+				origin: { id: "", name: "", country: "" },
+				destination: { id: "", name: "", country: "" },
+			};
+		})
+		.filter((f): f is Flight => f !== null);
 
-				// Enrich with departure/arrival from flight route API
-				try {
-					const routeRes = await fetch(
-						`https://opensky-network.org/api/flights/aircraft?icao24=${icao24}&begin=${begin}&end=${now}`
-					);
-					if (routeRes.ok) {
-						const routes = (await routeRes.json()) as Array<{
-							estDepartureAirport: string | null;
-							estArrivalAirport: string | null;
-						}>;
-						if (routes.length > 0) {
-							flight.origin.id = routes[0].estDepartureAirport ?? "";
-							flight.destination.id = routes[0].estArrivalAirport ?? "";
-						}
-					}
-				} catch (e) {
-					console.warn(`Route fetch failed for ${icao24}`, e);
-				}
+	// Step 2: Sort by distance, take top 20 with a callsign
+	const closest = allFlights
+		.sort((a, b) => a.distance - b.distance)
+		.filter((f) => f.callsign)
+		.slice(0, 20);
 
-				// Only return if we have at least origin or destination airport ID
-				if (flight.origin.id || flight.destination.id) {
-					return flight;
-				}
-				return null; // Discard if no airport info found
-			})
+	// Step 3: Enrich only these 20 with adsbdb route lookups
+	await Promise.all(
+		closest.map(async (flight) => {
+			const route = await fetchRouteFromAdsbdb(flight.callsign);
+			if (route) {
+				flight.airline = route.airline;
+				if (route.origin) flight.origin = route.origin;
+				if (route.destination) flight.destination = route.destination;
+			}
+		})
 	);
 
-	// Filter out null values (flights skipped due to missing ICAO24 or airport info)
-	return flights.filter((f): f is Flight => f !== null);
+	// Step 4: Keep only flights that have origin or destination after enrichment
+	return closest.filter((f) => f.origin.id || f.destination.id);
 }
 
 /**
@@ -174,7 +155,9 @@ async function fetchOpenSky(lat: number, lon: number, radiusKm: number): Promise
  */
 async function fetchRouteFromAdsbdb(callsign: string): Promise<{ airline?: string; origin?: { id: string; name: string; country: string }; destination?: { id: string; name: string; country: string } } | null> {
 	try {
-		const res = await fetch(`https://api.adsbdb.com/v0/callsign/${encodeURIComponent(callsign)}`);
+		const res = await fetch(`https://api.adsbdb.com/v0/callsign/${encodeURIComponent(callsign)}`, {
+			cf: { cacheTtl: 3600 },
+		} as RequestInit);
 		if (!res.ok) {
 			if (res.status !== 404) {
 				console.warn(`adsbdb returned ${res.status} for callsign ${callsign}`);
@@ -222,7 +205,8 @@ async function fetchAdsbFi(lat: number, lon: number, radiusKm: number): Promise<
 	const distNm = Math.min(radiusKm / 1.852, 250);
 
 	const response = await fetch(
-		`https://opendata.adsb.fi/api/v3/lat/${lat}/lon/${lon}/dist/${distNm}`
+		`https://opendata.adsb.fi/api/v3/lat/${lat}/lon/${lon}/dist/${distNm}`,
+		{ cf: { cacheTtl: 15 } } as RequestInit
 	);
 
 	if (!response.ok) throw new Error(`adsb.fi API error: ${response.status}`);

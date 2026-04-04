@@ -43,4 +43,10 @@ Body:
   }
 ```
 
+## Data Sources
+
+- **[adsb.fi](https://opendata.adsb.fi/)** — Primary source, no auth required.
+- **[OpenSky Network](https://opensky-network.org/)** — Secondary source, currently using anonymous access (400 credits/day, ~1 credit per bounding-box query). If you hit the limit, register a free account (4,000 credits/day) and switch to their OAuth2 client credentials flow (`OPENSKY_CLIENT_ID` / `OPENSKY_CLIENT_SECRET`). Note: OpenSky dropped Basic Auth in March 2026.
+- **[adsbdb.com](https://api.adsbdb.com/)** — Route enrichment (origin/destination) by callsign.
+
 For more details, see the [src/index.ts](src/index.ts) and [src/utils.ts](src/utils.ts) files.
