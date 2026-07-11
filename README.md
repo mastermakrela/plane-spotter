@@ -4,8 +4,8 @@ Plane Spotter is a Cloudflare Worker API that provides real-time information abo
 
 ## What it does
 
-- Fetches live flight data from both OpenSky Network and adsb.fi, with route enrichment via adsbdb.com.
-- Merges, deduplicates, and enriches flight information (including aircraft model, airline, origin, and destination).
+- Fetches live flight data from adsb.fi (with airplanes.live as failover), with route enrichment via the adsb.im routeset API.
+- Enriches flight information (including aircraft model, airline, origin, and destination) with position-plausibility-checked routes.
 - Exposes a secure HTTP API endpoint to query for flights near a given latitude/longitude and within a specified radius.
 - Supports both JSON and human-readable plain text output for easy consumption by devices and shortcuts.
 
@@ -18,7 +18,7 @@ Plane Spotter is a Cloudflare Worker API that provides real-time information abo
    Clients send a JSON body with latitude, longitude, and optional radius (in kilometers). An optional `pretty-print` flag returns a formatted text response.
 
 3. **Data Fetching**:  
-   The worker queries both OpenSky and adsb.fi APIs for flights within the requested area. It calculates distances, enriches results with route data from adsbdb.com, and merges results by unique aircraft identifiers.
+   The worker queries adsb.fi (falling back to airplanes.live) for airborne aircraft within the requested area, calculates distances, and enriches the closest 20 with route data via a single batched call to the adsb.im routeset API. Routes that are implausible for the aircraft's current position are discarded; flights without a known route are still returned.
 
 4. **Response**:  
    The API returns a list of nearby flights, sorted by distance, including details such as aircraft type, registration, airline, origin, destination, altitude, speed, and heading. The response can be in JSON or pretty-printed text format.
@@ -45,8 +45,9 @@ Body:
 
 ## Data Sources
 
-- **[adsb.fi](https://opendata.adsb.fi/)** — Primary source, no auth required.
-- **[OpenSky Network](https://opensky-network.org/)** — Secondary source, currently using anonymous access (400 credits/day, ~1 credit per bounding-box query). If you hit the limit, register a free account (4,000 credits/day) and switch to their OAuth2 client credentials flow (`OPENSKY_CLIENT_ID` / `OPENSKY_CLIENT_SECRET`). Note: OpenSky dropped Basic Auth in March 2026.
-- **[adsbdb.com](https://api.adsbdb.com/)** — Route enrichment (origin/destination) by callsign.
+- **Positions** — three community sources tried in order, all serving the same readsb format, no auth required (~1 req/s each): [adsb.fi](https://opendata.adsb.fi/), [adsb.lol](https://api.adsb.lol/docs), [airplanes.live](https://airplanes.live/api-guide/). The `source` field in the response shows which one answered. Note: these community APIs throttle or block shared cloud egress IPs — as of July 2026, adsb.fi returns 403 and adsb.lol 429 from Cloudflare Workers, so airplanes.live typically carries production traffic; the chain exists so this can shift without breaking.
+- **[adsb.im routeset](https://adsb.im/api/0/routeset)** — Route enrichment (origin/destination/airline) by callsign, batched in a single POST. Backed by the community-maintained [VRS standing-data](https://github.com/vradarserver/standing-data) (updated daily) and validated against the aircraft's actual position (`plausible` flag) — the same API tar1090 uses. Airline names come from a static ICAO-code map generated from the same dataset (`src/names.ts`).
+
+Removed sources: OpenSky (bbox-only, credit-capped, returns no registration/type/route) and adsbdb.com (largely static legacy route data that produced stale/wrong routes).
 
 For more details, see the [src/index.ts](src/index.ts) and [src/utils.ts](src/utils.ts) files.
